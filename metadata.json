@@ -1,0 +1,6 @@
+{
+  "name": "Invoice Customization Studio",
+  "description": "A workspace to customize, preview, and generate professional business invoices, quotes, proformas, delivery notes, receipts, and credit notes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
