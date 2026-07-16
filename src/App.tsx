@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import {
   FileText,
   Palette,
@@ -199,6 +199,7 @@ export default function App() {
   const [totalDiscountPercent, setTotalDiscountPercent] = useState(10);
 
   // Footer text states
+  const [paymentInstructionsHeading, setPaymentInstructionsHeading] = useState('Bank Details');
   const [paymentInstructions, setPaymentInstructions] = useState('Bank Transfer: Chase Bank • Account: 9876-5432-10 • Routing: 121000248 • Payment Link: pay.creativestudio.design/inv-2026-1001');
   const [finePrint, setFinePrint] = useState('Payment terms: Net 15 days. Standard 1.5% interest rate charged monthly on late balances.');
 
@@ -516,20 +517,27 @@ export default function App() {
       element.classList.add('is-exporting-pdf');
 
       // Wait for DOM and styling recalculations
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
-      const canvas = await html2canvas(element, {
-        scale: 2, // Retain sharp high resolution for print quality
-        useCORS: true,
-        logging: false,
-        allowTaint: true,
+      const dataUrl = await toPng(element, {
+        quality: 0.98,
+        pixelRatio: 2.5, // Crisp high-res rendering
         backgroundColor: '#ffffff',
+        style: {
+          transform: 'none',
+          boxShadow: 'none',
+        },
       });
 
       // Remove export styles
       element.classList.remove('is-exporting-pdf');
 
-      const imgData = canvas.toDataURL('image/png');
+      // Load image to compute proportional height perfectly
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((resolve) => {
+        img.onload = resolve;
+      });
 
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -541,19 +549,19 @@ export default function App() {
       const pdfHeight = 297; // A4 standard height in mm
       
       const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgHeight = (img.height * imgWidth) / img.width;
       
       let heightLeft = imgHeight;
       let position = 0;
 
       // Render the image into PDF pages (handling multi-page documents seamlessly)
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pdfHeight;
 
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
         heightLeft -= pdfHeight;
       }
 
@@ -1223,17 +1231,31 @@ export default function App() {
               </div>
 
               {/* Payment Instructions */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  How to Pay / Banking Details
-                </label>
-                <textarea
-                  rows={3}
-                  value={paymentInstructions}
-                  onChange={(e) => setPaymentInstructions(e.target.value)}
-                  placeholder="Specify Bank name, Routing, Account Number, IBAN or online payment link..."
-                  className="w-full text-xs p-2 border border-slate-200 rounded mt-1 bg-white focus:outline-none focus:border-indigo-500"
-                />
+              <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Bank Details Section Heading
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentInstructionsHeading}
+                    onChange={(e) => setPaymentInstructionsHeading(e.target.value)}
+                    placeholder="e.g. Bank Details, How to Pay, Wire Transfer info"
+                    className="w-full text-xs p-2 border border-slate-200 rounded mt-1 bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Bank Details / Payment Instructions
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={paymentInstructions}
+                    onChange={(e) => setPaymentInstructions(e.target.value)}
+                    placeholder="Specify Bank name, Routing, Account Number, IBAN or online payment link..."
+                    className="w-full text-xs p-2 border border-slate-200 rounded mt-1 bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
               </div>
 
               {/* The Fine Print */}
@@ -2024,11 +2046,6 @@ export default function App() {
                         {invoiceNumber}
                       </p>
                     )}
-                    {companyTaxValue && (
-                      <p className="text-[11px]">
-                        {companyTaxLabel}: <span className="text-slate-600 font-medium">{companyTaxValue}</span>
-                      </p>
-                    )}
                     {docType === 'delivery' && (
                       <p className="text-[11px]">
                         Courier: <span className="text-slate-600 font-medium">{courierName}</span>
@@ -2541,15 +2558,24 @@ export default function App() {
             {/* LOWER PAYMENT INSTRUCTIONS & COMPLIANCE BLOCK */}
             <div className="mt-14 border-t border-slate-100 pt-6 avoid-break">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-[11px] leading-relaxed">
-                {/* Dynamic How to Pay banking details */}
+                {/* Dynamic How to Pay/Bank Details banking details */}
                 <div>
                   {docType !== 'delivery' && (
                     <>
+                      <div className="no-print">
+                        <input
+                          type="text"
+                          value={paymentInstructionsHeading}
+                          onChange={(e) => setPaymentInstructionsHeading(e.target.value)}
+                          style={{ color: brandColor }}
+                          className="text-[9px] font-bold uppercase tracking-widest bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition focus:outline-none w-full mb-1.5"
+                        />
+                      </div>
                       <p
                         style={{ color: brandColor }}
-                        className="text-[9px] font-bold uppercase tracking-widest mb-1.5"
+                        className="print-only hidden print:block text-[9px] font-bold uppercase tracking-widest mb-1.5"
                       >
-                        How to Pay
+                        {paymentInstructionsHeading}
                       </p>
                       <p className="text-slate-500 font-medium whitespace-pre-wrap">{paymentInstructions}</p>
                     </>
@@ -2616,13 +2642,7 @@ export default function App() {
                     </div>
                   ) : (
                     <div>
-                      <p
-                        style={{ color: brandColor }}
-                        className="text-[9px] font-bold uppercase tracking-widest mb-1.5"
-                      >
-                        Terms & Policies
-                      </p>
-                      <p className="whitespace-pre-line leading-relaxed">{finePrint}</p>
+                      <p className="whitespace-pre-line leading-relaxed text-slate-500">{finePrint}</p>
                     </div>
                   )}
                 </div>

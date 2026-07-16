@@ -98,12 +98,9 @@
   box-shadow: none !important;
   border: none !important;
   border-radius: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  min-height: 0 !important;
-  height: auto !important;
+  width: 800px !important;
+  max-width: 800px !important;
+  min-height: 1050px !important;
   background: #ffffff !important;
 }
 
@@ -117,24 +114,25 @@
   opacity: 0 !important;
 }
 
+.is-exporting-pdf .print-only {
+  display: block !important;
+  visibility: visible !important;
+}
+
+.is-exporting-pdf span.print-only {
+  display: inline !important;
+  visibility: visible !important;
+}
+
 .is-exporting-pdf input,
 .is-exporting-pdf textarea,
 .is-exporting-pdf select {
   border: none !important;
   background: transparent !important;
-  padding: 0 !important;
-  margin: 0 !important;
   outline: none !important;
   box-shadow: none !important;
   resize: none !important;
   color: #000000 !important;
-  font-size: inherit !important;
-  font-weight: inherit !important;
-  line-height: inherit !important;
-  width: 100% !important;
-  height: auto !important;
-  min-height: unset !important;
-  overflow: visible !important;
   appearance: none !important;
   -webkit-appearance: none !important;
 }
