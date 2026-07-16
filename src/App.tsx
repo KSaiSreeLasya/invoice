@@ -145,6 +145,7 @@ export default function App() {
   const [employeeBank, setEmployeeBank] = useState('JPMorgan Chase Bank');
   const [employeeAccount, setEmployeeAccount] = useState('XXXX-XXXX-8821');
   const [employeeTaxId, setEmployeeTaxId] = useState('PAN-AAACT9827F');
+  const [employeeStatus, setEmployeeStatus] = useState('Regular Full-time');
   const [salaryInWords, setSalaryInWords] = useState('');
 
   const [earnings, setEarnings] = useState<PayslipItem[]>([
@@ -487,6 +488,7 @@ export default function App() {
       setEmployeeBank('JPMorgan Chase Bank');
       setEmployeeAccount('XXXX-XXXX-8821');
       setEmployeeTaxId('PAN-AAACT9827F');
+      setEmployeeStatus('Regular Full-time');
       setEarnings([
         { id: 'earn-1', name: 'Basic Salary', amount: 6500 },
         { id: 'earn-2', name: 'House Rent Allowance (HRA)', amount: 2000 },
@@ -1672,6 +1674,22 @@ export default function App() {
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
+                      <label className="text-[9px] text-slate-500">Employment Status</label>
+                      <select
+                        value={employeeStatus}
+                        onChange={(e) => setEmployeeStatus(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="Regular Full-time">Regular Full-time</option>
+                        <option value="Intern">Intern</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contractor">Contractor</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
                       <label className="text-[9px] text-slate-500">Bank Name</label>
                       <input
                         type="text"
@@ -2072,7 +2090,22 @@ export default function App() {
                     <div>
                       <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tax Registration</p>
                       <p className="font-semibold text-slate-700 mt-0.5">Tax ID: {employeeTaxId || 'N/A'}</p>
-                      <p className="text-[10px] text-slate-500 mt-1">Status: Regular Full-time</p>
+                      <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                        <span>Status:</span>
+                        <div className="no-print inline-block">
+                          <select
+                            value={employeeStatus}
+                            onChange={(e) => setEmployeeStatus(e.target.value)}
+                            className="bg-transparent border-none p-0 text-[10px] font-semibold text-slate-700 cursor-pointer focus:ring-0 focus:outline-none"
+                          >
+                            <option value="Regular Full-time">Regular Full-time</option>
+                            <option value="Intern">Intern</option>
+                            <option value="Part-time">Part-time</option>
+                            <option value="Contractor">Contractor</option>
+                          </select>
+                        </div>
+                        <span className="print-only hidden font-semibold text-slate-700">{employeeStatus}</span>
+                      </div>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Disbursal Bank</p>
