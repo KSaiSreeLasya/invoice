@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import {
   FileText,
   Palette,
@@ -25,7 +27,8 @@ import {
   ChevronRight,
   User,
   Hash,
-  AlertCircle
+  AlertCircle,
+  Coins
 } from 'lucide-react';
 
 // Define the shape of a line item
@@ -38,6 +41,72 @@ interface LineItem {
   unitPrice: number;
   itemDiscount?: number; // per line discount percentage
 }
+
+// Define the shape of a payslip item
+interface PayslipItem {
+  id: string;
+  name: string;
+  amount: number;
+}
+
+// Convert numbers to English words helper for professional payslips in Rupees (Lakhs & Crores)
+const numberToWords = (num: number): string => {
+  if (num <= 0) return 'Zero Rupees Only';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  
+  const convertLessThanThousand = (n: number): string => {
+    let str = '';
+    if (n >= 100) {
+      str += ones[Math.floor(n / 100)] + ' Hundred ';
+      n %= 100;
+    }
+    if (n >= 20) {
+      str += tens[Math.floor(n / 10)] + ' ';
+      n %= 10;
+    }
+    if (n > 0) {
+      str += ones[n] + ' ';
+    }
+    return str.trim();
+  };
+
+  const integerPart = Math.floor(num);
+  const paise = Math.round((num - integerPart) * 100);
+  
+  const convertIndianSystem = (n: number): string => {
+    if (n === 0) return '';
+    let str = '';
+    
+    // Crores (1,00,00,000)
+    if (n >= 10000000) {
+      str += convertLessThanThousand(Math.floor(n / 10000000)) + ' Crore ';
+      n %= 10000000;
+    }
+    // Lakhs (1,00,000)
+    if (n >= 100000) {
+      str += convertLessThanThousand(Math.floor(n / 100000)) + ' Lakh ';
+      n %= 100000;
+    }
+    // Thousands (1,000)
+    if (n >= 1000) {
+      str += convertLessThanThousand(Math.floor(n / 1000)) + ' Thousand ';
+      n %= 1000;
+    }
+    // Remainder
+    if (n > 0) {
+      str += convertLessThanThousand(n);
+    }
+    return str.trim();
+  };
+  
+  let result = convertIndianSystem(integerPart);
+  result = result.trim() + ' Rupees';
+  if (paise > 0) {
+    result += ' and ' + convertLessThanThousand(paise) + ' Paise';
+  }
+  return result.replace(/\s+/g, ' ') + ' Only';
+};
 
 // Preset logo generator options
 const LOGO_PRESETS = [
@@ -59,13 +128,39 @@ const COLOR_PALETTES = [
 
 export default function App() {
   // --- CORE APP STATE ---
-  const [docType, setDocType] = useState<'invoice' | 'estimate' | 'proforma' | 'delivery' | 'receipt' | 'credit'>('invoice');
+  const [docType, setDocType] = useState<'invoice' | 'estimate' | 'proforma' | 'delivery' | 'receipt' | 'credit' | 'payslip'>('invoice');
   const [activeTab, setActiveTab] = useState<'branding' | 'grid' | 'footer' | 'ecosystem'>('branding');
 
   // Theme states
   const [brandColor, setBrandColor] = useState('#4f46e5');
   const [typography, setTypography] = useState<'sans' | 'serif' | 'mono'>('sans');
   const [compactRows, setCompactRows] = useState(false);
+
+  // --- PAYSLIP SYSTEM STATES ---
+  const [employeeName, setEmployeeName] = useState('Sarah Connor');
+  const [employeeId, setEmployeeId] = useState('EMP-2026-0042');
+  const [employeeRole, setEmployeeRole] = useState('Lead Senior Architect');
+  const [employeeDept, setEmployeeDept] = useState('Engineering & AI Systems');
+  const [payPeriod, setPayPeriod] = useState('July 2026');
+  const [employeeBank, setEmployeeBank] = useState('JPMorgan Chase Bank');
+  const [employeeAccount, setEmployeeAccount] = useState('XXXX-XXXX-8821');
+  const [employeeTaxId, setEmployeeTaxId] = useState('PAN-AAACT9827F');
+  const [salaryInWords, setSalaryInWords] = useState('');
+
+  const [earnings, setEarnings] = useState<PayslipItem[]>([
+    { id: 'earn-1', name: 'Basic Salary', amount: 6500 },
+    { id: 'earn-2', name: 'House Rent Allowance (HRA)', amount: 2000 },
+    { id: 'earn-3', name: 'Special Allowance', amount: 1200 },
+    { id: 'earn-4', name: 'Performance Bonus', amount: 800 },
+    { id: 'earn-5', name: 'Medical Reimbursement', amount: 250 },
+  ]);
+
+  const [deductions, setDeductions] = useState<PayslipItem[]>([
+    { id: 'ded-1', name: 'Provident Fund (PF)', amount: 780 },
+    { id: 'ded-2', name: 'Professional Tax', amount: 200 },
+    { id: 'ded-3', name: 'TDS / Income Tax', amount: 950 },
+    { id: 'ded-4', name: 'Health Insurance Premium', amount: 150 },
+  ]);
 
   // Branding states
   const [logoPreset, setLogoPreset] = useState<string>('creative');
@@ -342,6 +437,12 @@ export default function App() {
 
   const calc = calculateTotals();
 
+  // Payslip Specific calculations
+  const totalEarnings = earnings.reduce((sum, item) => sum + item.amount, 0);
+  const totalDeductions = deductions.reduce((sum, item) => sum + item.amount, 0);
+  const netSalary = Math.max(0, totalEarnings - totalDeductions);
+  const autoSalaryInWords = numberToWords(netSalary);
+
   // Reset functionality
   const handleReset = () => {
     if (confirm('Are you sure you want to reset all customizations to corporate default?')) {
@@ -377,6 +478,112 @@ export default function App() {
         { id: 'item-2', description: 'Website Development (6 Pages)', quantity: 1, unitPrice: 8200 },
         { id: 'item-3', description: 'Stock Assets & Licensing', quantity: 1, unitPrice: 350 }
       ]);
+      setEmployeeName('Sarah Connor');
+      setEmployeeId('EMP-2026-0042');
+      setEmployeeRole('Lead Senior Architect');
+      setEmployeeDept('Engineering & AI Systems');
+      setPayPeriod('July 2026');
+      setEmployeeBank('JPMorgan Chase Bank');
+      setEmployeeAccount('XXXX-XXXX-8821');
+      setEmployeeTaxId('PAN-AAACT9827F');
+      setEarnings([
+        { id: 'earn-1', name: 'Basic Salary', amount: 6500 },
+        { id: 'earn-2', name: 'House Rent Allowance (HRA)', amount: 2000 },
+        { id: 'earn-3', name: 'Special Allowance', amount: 1200 },
+        { id: 'earn-4', name: 'Performance Bonus', amount: 800 },
+        { id: 'earn-5', name: 'Medical Reimbursement', amount: 250 },
+      ]);
+      setDeductions([
+        { id: 'ded-1', name: 'Provident Fund (PF)', amount: 780 },
+        { id: 'ded-2', name: 'Professional Tax', amount: 200 },
+        { id: 'ded-3', name: 'TDS / Income Tax', amount: 950 },
+        { id: 'ded-4', name: 'Health Insurance Premium', amount: 150 },
+      ]);
+    }
+  };
+
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Download high-fidelity PDF directly
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('print-invoice-sheet');
+    if (!element) return;
+
+    try {
+      setIsGeneratingPDF(true);
+
+      // Temporary class to flatten styles and hide editing overlays
+      element.classList.add('is-exporting-pdf');
+
+      // Wait for DOM and styling recalculations
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // Retain sharp high resolution for print quality
+        useCORS: true,
+        logging: false,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+      });
+
+      // Remove export styles
+      element.classList.remove('is-exporting-pdf');
+
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = 210; // A4 standard width in mm
+      const pdfHeight = 297; // A4 standard height in mm
+      
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Render the image into PDF pages (handling multi-page documents seamlessly)
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      // Generate context-aware file names based on doc type and unique details
+      let filename = 'document.pdf';
+      const docCode = `${invoicePrefix || ''}${invoiceNumber || 'Draft'}`;
+      if (docType === 'invoice') {
+        filename = `Invoice_${docCode}.pdf`;
+      } else if (docType === 'estimate') {
+        filename = `${estimateTerminology}_${docCode}.pdf`;
+      } else if (docType === 'payslip') {
+        filename = `Payslip_${employeeName.replace(/\s+/g, '_')}_${payPeriod.replace(/\s+/g, '_')}.pdf`;
+      } else if (docType === 'receipt') {
+        filename = `Receipt_${docCode}.pdf`;
+      } else if (docType === 'delivery') {
+        filename = `DeliveryNote_${docCode}.pdf`;
+      } else if (docType === 'proforma') {
+        filename = `Proforma_${docCode}.pdf`;
+      } else if (docType === 'credit') {
+        filename = `CreditNote_${docCode}.pdf`;
+      }
+
+      pdf.save(filename);
+    } catch (error) {
+      console.error('Failed to generate and download PDF:', error);
+      // Fallback option in case of unexpected library failures
+      window.print();
+    } finally {
+      setIsGeneratingPDF(false);
+      element.classList.remove('is-exporting-pdf');
     }
   };
 
@@ -398,9 +605,9 @@ export default function App() {
     }
   };
 
-  // Format currency helper
+  // Format currency helper to INR (Indian Rupees)
   const fmt = (num: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(num);
   };
 
   // Handle dynamic font styles
@@ -415,18 +622,23 @@ export default function App() {
       {/* Dynamic style injection for print stylesheet and branding colors */}
       <style>{`
         @media print {
+          @page {
+            margin: 15mm !important;
+          }
           body, html, #root {
             background: white !important;
             color: black !important;
             overflow: visible !important;
             height: auto !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           #invoice-workspace {
             background: white !important;
             height: auto !important;
             overflow: visible !important;
           }
-          aside, header, nav, .no-print, button, .action-pill {
+          aside, header, nav, .no-print, button, .action-pill, .delete-row-btn {
             display: none !important;
           }
           .invoice-page-container {
@@ -449,6 +661,32 @@ export default function App() {
           }
           .interactive-border {
             border-color: transparent !important;
+          }
+          /* Flatten all inputs, textareas, and select menus for print */
+          .invoice-page input, .invoice-page textarea, .invoice-page select {
+            border: none !important;
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            outline: none !important;
+            box-shadow: none !important;
+            resize: none !important;
+            color: black !important;
+            font-size: inherit !important;
+            font-weight: inherit !important;
+            line-height: inherit !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: unset !important;
+            overflow: visible !important;
+            appearance: none !important;
+            -webkit-appearance: none !important;
+          }
+          /* Prevent page split breaks inside critical blocks */
+          .invoice-page tr, 
+          .invoice-page .avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -1246,7 +1484,7 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="text-[10px] text-slate-500">Amount Received ($)</label>
+                    <label className="text-[10px] text-slate-500">Amount Received (₹)</label>
                     <input
                       type="number"
                       value={amountReceived}
@@ -1339,6 +1577,198 @@ export default function App() {
                 </div>
               )}
 
+              {/* 6. Payslip Customization Settings */}
+              {docType === 'payslip' && (
+                <div className="space-y-4 border-l-2 border-indigo-500 pl-3">
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Coins className="w-4 h-4 text-indigo-600" />
+                    Employee Profile
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-slate-500">Employee Name</label>
+                      <input
+                        type="text"
+                        value={employeeName}
+                        onChange={(e) => setEmployeeName(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500">Employee ID</label>
+                      <input
+                        type="text"
+                        value={employeeId}
+                        onChange={(e) => setEmployeeId(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-slate-500">Role / Title</label>
+                      <input
+                        type="text"
+                        value={employeeRole}
+                        onChange={(e) => setEmployeeRole(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500">Department</label>
+                      <input
+                        type="text"
+                        value={employeeDept}
+                        onChange={(e) => setEmployeeDept(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-slate-500">Pay Period</label>
+                      <input
+                        type="text"
+                        value={payPeriod}
+                        onChange={(e) => setPayPeriod(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500">Tax ID / PAN</label>
+                      <input
+                        type="text"
+                        value={employeeTaxId}
+                        onChange={(e) => setEmployeeTaxId(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] text-slate-500">Bank Name</label>
+                      <input
+                        type="text"
+                        value={employeeBank}
+                        onChange={(e) => setEmployeeBank(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500">Bank Account No</label>
+                      <input
+                        type="text"
+                        value={employeeAccount}
+                        onChange={(e) => setEmployeeAccount(e.target.value)}
+                        className="w-full text-xs p-1.5 border border-slate-200 rounded mt-1 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dynamic Earnings Editor */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Earnings Breakdowns</span>
+                      <button
+                        onClick={() => {
+                          const id = `earn-${Date.now()}`;
+                          setEarnings([...earnings, { id, name: 'Allowance', amount: 100 }]);
+                        }}
+                        className="text-[10px] text-indigo-600 font-bold hover:underline flex items-center gap-0.5"
+                      >
+                        <Plus className="w-3 h-3" /> Add
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {earnings.map((earn) => (
+                        <div key={earn.id} className="flex gap-1 items-center">
+                          <input
+                            type="text"
+                            value={earn.name}
+                            onChange={(e) => {
+                              setEarnings(earnings.map(x => x.id === earn.id ? { ...x, name: e.target.value } : x));
+                            }}
+                            className="text-[11px] p-1 border border-slate-200 rounded bg-white flex-1 min-w-0"
+                            placeholder="Name"
+                          />
+                          <div className="relative w-20 shrink-0">
+                            <span className="absolute left-1 top-1.5 text-[9px] text-slate-400">₹</span>
+                            <input
+                              type="number"
+                              value={earn.amount}
+                              onChange={(e) => {
+                                setEarnings(earnings.map(x => x.id === earn.id ? { ...x, amount: parseFloat(e.target.value) || 0 } : x));
+                              }}
+                              className="text-[11px] p-1 pl-3.5 border border-slate-200 rounded bg-white text-right w-full"
+                            />
+                          </div>
+                          <button
+                            onClick={() => setEarnings(earnings.filter(x => x.id !== earn.id))}
+                            disabled={earnings.length <= 1}
+                            className="text-slate-300 hover:text-rose-600 transition disabled:opacity-30"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Dynamic Deductions Editor */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Deductions Breakdowns</span>
+                      <button
+                        onClick={() => {
+                          const id = `ded-${Date.now()}`;
+                          setDeductions([...deductions, { id, name: 'Tax Deduction', amount: 50 }]);
+                        }}
+                        className="text-[10px] text-indigo-600 font-bold hover:underline flex items-center gap-0.5"
+                      >
+                        <Plus className="w-3 h-3" /> Add
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {deductions.map((ded) => (
+                        <div key={ded.id} className="flex gap-1 items-center">
+                          <input
+                            type="text"
+                            value={ded.name}
+                            onChange={(e) => {
+                              setDeductions(deductions.map(x => x.id === ded.id ? { ...x, name: e.target.value } : x));
+                            }}
+                            className="text-[11px] p-1 border border-slate-200 rounded bg-white flex-1 min-w-0"
+                            placeholder="Name"
+                          />
+                          <div className="relative w-20 shrink-0">
+                            <span className="absolute left-1 top-1.5 text-[9px] text-slate-400">₹</span>
+                            <input
+                              type="number"
+                              value={ded.amount}
+                              onChange={(e) => {
+                                setDeductions(deductions.map(x => x.id === ded.id ? { ...x, amount: parseFloat(e.target.value) || 0 } : x));
+                              }}
+                              className="text-[11px] p-1 pl-3.5 border border-slate-200 rounded bg-white text-right w-full"
+                            />
+                          </div>
+                          <button
+                            onClick={() => setDeductions(deductions.filter(x => x.id !== ded.id))}
+                            disabled={deductions.length <= 1}
+                            className="text-slate-300 hover:text-rose-600 transition disabled:opacity-30"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* No specific tools loaded state */}
               {docType === 'invoice' && (
                 <div className="p-4 bg-slate-50 rounded border border-dashed border-slate-300 text-center">
@@ -1354,14 +1784,32 @@ export default function App() {
         </div>
 
         {/* Studio Footer Controls */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50 no-print">
+        <div className="p-4 border-t border-slate-100 bg-slate-50 no-print space-y-2">
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isGeneratingPDF}
+            style={{ backgroundColor: brandColor }}
+            className="w-full text-white py-2.5 px-4 rounded-lg font-bold text-xs shadow hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGeneratingPDF ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Download PDF
+              </>
+            )}
+          </button>
+
           <button
             onClick={handlePrint}
-            style={{ backgroundColor: brandColor }}
-            className="w-full text-white py-2.5 px-4 rounded-lg font-bold text-xs shadow hover:opacity-90 transition flex items-center justify-center gap-2"
+            className="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 py-2 px-4 rounded-lg font-bold text-xs transition flex items-center justify-center gap-2"
           >
             <Printer className="w-4 h-4" />
-            Print / Save to PDF
+            Print via Browser
           </button>
         </div>
       </aside>
@@ -1442,6 +1890,21 @@ export default function App() {
             >
               <Undo2 className="w-3.5 h-3.5 text-amber-600" />
               Credit Note
+            </button>
+
+            <button
+              onClick={() => {
+                setDocType('payslip');
+                setActiveTab('ecosystem');
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                docType === 'payslip'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-950'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5 text-violet-600" />
+              Salary Slip
             </button>
           </div>
 
@@ -1546,14 +2009,21 @@ export default function App() {
                     {docType === 'delivery' && 'Delivery Note'}
                     {docType === 'receipt' && 'Payment Receipt'}
                     {docType === 'credit' && 'Credit Note'}
+                    {docType === 'payslip' && 'Salary Payslip'}
                   </h1>
 
                   {/* Doc Identifier */}
                   <div className="mt-2 text-slate-400 space-y-0.5">
-                    <p className="font-semibold text-slate-700">
-                      Document #{invoicePrefix}
-                      {invoiceNumber}
-                    </p>
+                    {docType === 'payslip' ? (
+                      <p className="font-semibold text-slate-700">
+                        Pay Period: <span className="text-slate-900 font-bold">{payPeriod}</span>
+                      </p>
+                    ) : (
+                      <p className="font-semibold text-slate-700">
+                        Document #{invoicePrefix}
+                        {invoiceNumber}
+                      </p>
+                    )}
                     {companyTaxValue && (
                       <p className="text-[11px]">
                         {companyTaxLabel}: <span className="text-slate-600 font-medium">{companyTaxValue}</span>
@@ -1568,401 +2038,508 @@ export default function App() {
                 </div>
               </div>
 
-              {/* CLIENT BILLING & DETAILS GRID */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 my-8 text-xs leading-relaxed">
-                <div>
-                  <p
-                    style={{ color: brandColor }}
-                    className="text-[10px] font-bold uppercase tracking-widest mb-2"
-                  >
-                    {docType === 'delivery' ? 'Ship To' : 'Bill To'}
-                  </p>
-                  {/* Inline editable block */}
-                  <div className="space-y-1">
-                    <input
-                      type="text"
-                      value={clientName}
-                      onChange={(e) => setClientName(e.target.value)}
-                      className="font-bold text-slate-900 text-sm w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition focus:outline-none"
-                    />
-                    <textarea
-                      rows={2}
-                      value={clientAddress}
-                      onChange={(e) => setClientAddress(e.target.value)}
-                      className="text-slate-500 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition focus:outline-none block"
-                    />
-                    <input
-                      type="text"
-                      value={clientPhone}
-                      onChange={(e) => setClientPhone(e.target.value)}
-                      placeholder="Client phone"
-                      className="text-slate-400 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition text-[11px] focus:outline-none"
-                    />
-                    <input
-                      type="text"
-                      value={clientEmail}
-                      onChange={(e) => setClientEmail(e.target.value)}
-                      placeholder="Client email"
-                      className="text-slate-400 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition text-[11px] focus:outline-none block"
-                    />
+              {docType === 'payslip' ? (
+                <div className="my-8">
+                  {/* Employee Profile grid */}
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Employee Name</p>
+                      <p className="font-bold text-slate-800 text-sm mt-0.5">{employeeName || 'N/A'}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">ID: {employeeId || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Job Designation</p>
+                      <p className="font-semibold text-slate-700 mt-0.5">{employeeRole || 'N/A'}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Dept: {employeeDept || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tax Registration</p>
+                      <p className="font-semibold text-slate-700 mt-0.5">Tax ID: {employeeTaxId || 'N/A'}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Status: Regular Full-time</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Disbursal Bank</p>
+                      <p className="font-semibold text-slate-700 mt-0.5">{employeeBank || 'N/A'}</p>
+                      <p className="text-[10px] text-slate-500 mt-1">A/C: {employeeAccount || 'N/A'}</p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-1.5 sm:text-right flex flex-col sm:items-end">
-                  <p
-                    style={{ color: brandColor }}
-                    className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                  >
-                    Document Metadata
-                  </p>
-                  <p className="text-slate-500">
-                    Date Issued:{' '}
-                    <span className="text-slate-900 font-semibold">{issueDate}</span>
-                  </p>
-                  {docType === 'estimate' ? (
-                    <p className="text-slate-500">
-                      Valid Until:{' '}
-                      <span className="text-slate-900 font-semibold">
-                        {new Date(new Date(issueDate).getTime() + validityDays * 24 * 60 * 60 * 1000)
-                          .toISOString()
-                          .split('T')[0]}
-                      </span>
-                    </p>
-                  ) : docType === 'receipt' ? (
-                    <p className="text-slate-500">
-                      Payment Date:{' '}
-                      <span className="text-slate-900 font-semibold">{paymentDate}</span>
-                    </p>
-                  ) : (
-                    <p className="text-slate-500">
-                      Date Due:{' '}
-                      <span className="text-slate-900 font-semibold">{dueDate}</span>
-                    </p>
-                  )}
+                  {/* Dual Earnings & Deductions Tables */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
+                    {/* Earnings side */}
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2 mb-3 flex justify-between items-center">
+                        <span>Earnings & Benefits</span>
+                        <span style={{ color: brandColor }} className="text-[11px] font-semibold">In INR (₹)</span>
+                      </h3>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-[10px] uppercase text-slate-400 font-bold border-b border-slate-100">
+                            <th className="pb-1.5 text-left">Description</th>
+                            <th className="pb-1.5 text-right w-24">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {earnings.map((earn) => (
+                            <tr key={earn.id} className="border-b border-slate-100">
+                              <td className="py-2 font-medium text-slate-700">{earn.name}</td>
+                              <td className="py-2 text-right text-slate-900 font-semibold">{fmt(earn.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="font-bold text-slate-800">
+                            <td className="py-3 text-left">Total Earnings (A)</td>
+                            <td className="py-3 text-right text-sm" style={{ color: brandColor }}>{fmt(totalEarnings)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
 
-                  {docType !== 'delivery' && docType !== 'receipt' && (
-                    <p className="text-slate-500">
-                      Terms: <span className="text-slate-900 font-semibold">{paymentTerms}</span>
-                    </p>
-                  )}
+                    {/* Deductions side */}
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2 mb-3 flex justify-between items-center">
+                        <span>Deductions & Tax withholdings</span>
+                        <span className="text-rose-600 text-[11px] font-semibold">In INR (₹)</span>
+                      </h3>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-[10px] uppercase text-slate-400 font-bold border-b border-slate-100">
+                            <th className="pb-1.5 text-left">Description</th>
+                            <th className="pb-1.5 text-right w-24">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {deductions.map((ded) => (
+                            <tr key={ded.id} className="border-b border-slate-100">
+                              <td className="py-2 font-medium text-slate-700">{ded.name}</td>
+                              <td className="py-2 text-right text-rose-600 font-medium">-{fmt(ded.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="font-bold text-slate-800">
+                            <td className="py-3 text-left">Total Deductions (B)</td>
+                            <td className="py-3 text-right text-sm text-rose-600">{fmt(totalDeductions)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
 
-                  {/* Delivery details */}
-                  {docType === 'delivery' && (
-                    <div className="text-[11px] text-slate-500 text-left sm:text-right space-y-0.5">
-                      <p>
-                        Tracking No:{' '}
-                        <span className="text-slate-900 font-semibold">{trackingNumber}</span>
-                      </p>
-                      <p>
-                        Dispatch Code:{' '}
-                        <span className="text-slate-900 font-semibold">{dispatchNumber}</span>
+                  {/* Net Take-Home Salary Banner */}
+                  <div className="mt-8 border-2 rounded-xl p-5 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: brandColor }}>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Net Take-Home Salary (A - B)</p>
+                      <h4 className="text-xl font-black mt-1" style={{ color: brandColor }}>{fmt(netSalary)}</h4>
+                    </div>
+                    <div className="text-right sm:max-w-md">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Net Salary In Words</p>
+                      <p className="text-xs font-semibold text-slate-700 mt-1 italic whitespace-normal break-words">
+                        {autoSalaryInWords}
                       </p>
                     </div>
-                  )}
-
-                  {/* Reference to original invoice for receipts / credit notes */}
-                  {(docType === 'receipt' || docType === 'credit') && (
-                    <p className="text-slate-500">
-                      Reference Invoice No:{' '}
-                      <span className="text-slate-900 font-semibold">
-                        {invoicePrefix}
-                        {invoiceNumber}
-                      </span>
-                    </p>
-                  )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* CLIENT BILLING & DETAILS GRID */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 my-8 text-xs leading-relaxed">
+                    <div>
+                      <p
+                        style={{ color: brandColor }}
+                        className="text-[10px] font-bold uppercase tracking-widest mb-2"
+                      >
+                        {docType === 'delivery' ? 'Ship To' : 'Bill To'}
+                      </p>
+                      {/* Inline editable block */}
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={clientName}
+                          onChange={(e) => setClientName(e.target.value)}
+                          className="font-bold text-slate-900 text-sm w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition focus:outline-none"
+                        />
+                        <textarea
+                          rows={2}
+                          value={clientAddress}
+                          onChange={(e) => setClientAddress(e.target.value)}
+                          className="text-slate-500 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition focus:outline-none block"
+                        />
+                        <input
+                          type="text"
+                          value={clientPhone}
+                          onChange={(e) => setClientPhone(e.target.value)}
+                          placeholder="Client phone"
+                          className="text-slate-400 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition text-[11px] focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={clientEmail}
+                          onChange={(e) => setClientEmail(e.target.value)}
+                          placeholder="Client email"
+                          className="text-slate-400 w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:bg-white p-0.5 rounded transition text-[11px] focus:outline-none block"
+                        />
+                      </div>
+                    </div>
 
-              {/* DYNAMIC DOCUMENTS GRID / TABLE */}
-              <div className="border-t border-slate-100 pt-6">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr
-                      style={{ borderBottomColor: brandColor }}
-                      className="border-b-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider"
-                    >
-                      {showSkuColumn && <th className="pb-3 w-16">SKU</th>}
-                      {showServiceDateColumn && <th className="pb-3 w-20">Date</th>}
-                      <th className="pb-3">Item & Description</th>
-                      <th className="pb-3 w-16 text-center">{colQtyLabel}</th>
-                      {/* Hide rates/pricing completely on delivery notes */}
-                      {docType !== 'delivery' && (
-                        <>
-                          <th className="pb-3 w-24 text-right">{colRateLabel}</th>
-                          {discountEnabled && discountType === 'line-item' && (
-                            <th className="pb-3 w-14 text-center">Disc%</th>
-                          )}
-                          <th className="pb-3 w-24 text-right">Amount</th>
-                        </>
+                    <div className="space-y-1.5 sm:text-right flex flex-col sm:items-end">
+                      <p
+                        style={{ color: brandColor }}
+                        className="text-[10px] font-bold uppercase tracking-widest mb-1"
+                      >
+                        Document Metadata
+                      </p>
+                      <p className="text-slate-500">
+                        Date Issued:{' '}
+                        <span className="text-slate-900 font-semibold">{issueDate}</span>
+                      </p>
+                      {docType === 'estimate' ? (
+                        <p className="text-slate-500">
+                          Valid Until:{' '}
+                          <span className="text-slate-900 font-semibold">
+                            {new Date(new Date(issueDate).getTime() + validityDays * 24 * 60 * 60 * 1000)
+                              .toISOString()
+                              .split('T')[0]}
+                          </span>
+                        </p>
+                      ) : docType === 'receipt' ? (
+                        <p className="text-slate-500">
+                          Payment Date:{' '}
+                          <span className="text-slate-900 font-semibold">{paymentDate}</span>
+                        </p>
+                      ) : (
+                        <p className="text-slate-500">
+                          Date Due:{' '}
+                          <span className="text-slate-900 font-semibold">{dueDate}</span>
+                        </p>
                       )}
-                      <th className="pb-3 w-8 no-print"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-xs text-slate-700">
-                    {lineItems.map((item, index) => {
-                      const lineAmount = item.quantity * item.unitPrice;
-                      const hasLineDiscount = discountEnabled && discountType === 'line-item' && item.itemDiscount;
-                      const calculatedLineTotal = hasLineDiscount
-                        ? lineAmount - (lineAmount * (item.itemDiscount || 0)) / 100
-                        : lineAmount;
 
-                      return (
+                      {docType !== 'delivery' && docType !== 'receipt' && (
+                        <p className="text-slate-500">
+                          Terms: <span className="text-slate-900 font-semibold">{paymentTerms}</span>
+                        </p>
+                      )}
+
+                      {/* Delivery details */}
+                      {docType === 'delivery' && (
+                        <div className="text-[11px] text-slate-500 text-left sm:text-right space-y-0.5">
+                          <p>
+                            Tracking No:{' '}
+                            <span className="text-slate-900 font-semibold">{trackingNumber}</span>
+                          </p>
+                          <p>
+                            Dispatch Code:{' '}
+                            <span className="text-slate-900 font-semibold">{dispatchNumber}</span>
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Reference to original invoice for receipts / credit notes */}
+                      {(docType === 'receipt' || docType === 'credit') && (
+                        <p className="text-slate-500">
+                          Reference Invoice No:{' '}
+                          <span className="text-slate-900 font-semibold">
+                            {invoicePrefix}
+                            {invoiceNumber}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* DYNAMIC DOCUMENTS GRID / TABLE */}
+                  <div className="border-t border-slate-100 pt-6">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
                         <tr
-                          key={item.id}
-                          className={`border-b border-slate-100 group transition hover:bg-slate-50/50 ${
-                            compactRows ? 'py-1' : 'py-3'
-                          }`}
+                          style={{ borderBottomColor: brandColor }}
+                          className="border-b-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider"
                         >
-                          {/* SKU Column */}
-                          {showSkuColumn && (
-                            <td className="py-2.5">
-                              <input
-                                type="text"
-                                value={item.sku || ''}
-                                onChange={(e) => handleUpdateItem(item.id, 'sku', e.target.value)}
-                                placeholder="ST-10"
-                                className="w-full text-[11px] bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
-                              />
-                              <span className="print-only hidden print:inline">{item.sku}</span>
-                            </td>
-                          )}
-
-                          {/* Date of Service Column */}
-                          {showServiceDateColumn && (
-                            <td className="py-2.5 text-slate-500">
-                              <input
-                                type="text"
-                                value={item.dateOfService || ''}
-                                onChange={(e) => handleUpdateItem(item.id, 'dateOfService', e.target.value)}
-                                placeholder="2026-07-01"
-                                className="w-full text-[11px] bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
-                              />
-                              <span className="print-only hidden print:inline">{item.dateOfService}</span>
-                            </td>
-                          )}
-
-                          {/* Item Description */}
-                          <td className="py-2.5 pr-4">
-                            <input
-                              type="text"
-                              value={item.description}
-                              onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
-                              className="w-full font-semibold text-slate-800 bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
-                            />
-                            <span className="print-only hidden print:inline font-semibold text-slate-850">
-                              {item.description}
-                            </span>
-                          </td>
-
-                          {/* Quantity */}
-                          <td className="py-2.5 text-center">
-                            <input
-                              type="number"
-                              value={item.quantity}
-                              onChange={(e) => handleUpdateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                              className="w-12 text-center bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print font-medium"
-                            />
-                            <span className="print-only hidden print:inline font-medium">{item.quantity}</span>
-                          </td>
-
-                          {/* Pricing details columns */}
+                          {showSkuColumn && <th className="pb-3 w-16">SKU</th>}
+                          {showServiceDateColumn && <th className="pb-3 w-20">Date</th>}
+                          <th className="pb-3">Item & Description</th>
+                          <th className="pb-3 w-16 text-center">{colQtyLabel}</th>
+                          {/* Hide rates/pricing completely on delivery notes */}
                           {docType !== 'delivery' && (
                             <>
-                              {/* Unit Price Rate */}
-                              <td className="py-2.5 text-right font-medium text-slate-600">
-                                <div className="inline-flex items-center justify-end w-full no-print">
-                                  <span className="text-[10px] text-slate-400 mr-0.5">$</span>
-                                  <input
-                                    type="number"
-                                    value={item.unitPrice}
-                                    onChange={(e) => handleUpdateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                    className="w-16 text-right bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5"
-                                  />
-                                </div>
-                                <span className="print-only hidden print:inline">
-                                  {fmt(item.unitPrice)}
-                                </span>
-                              </td>
-
-                              {/* Per line item discount column */}
+                              <th className="pb-3 w-24 text-right">{colRateLabel}</th>
                               {discountEnabled && discountType === 'line-item' && (
-                                <td className="py-2.5 text-center">
+                                <th className="pb-3 w-14 text-center">Disc%</th>
+                              )}
+                              <th className="pb-3 w-24 text-right">Amount</th>
+                            </>
+                          )}
+                          <th className="pb-3 w-8 no-print"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-xs text-slate-700">
+                        {lineItems.map((item, index) => {
+                          const lineAmount = item.quantity * item.unitPrice;
+                          const hasLineDiscount = discountEnabled && discountType === 'line-item' && item.itemDiscount;
+                          const calculatedLineTotal = hasLineDiscount
+                            ? lineAmount - (lineAmount * (item.itemDiscount || 0)) / 100
+                            : lineAmount;
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className={`border-b border-slate-100 group transition hover:bg-slate-50/50 ${
+                                compactRows ? 'py-1' : 'py-3'
+                              }`}
+                            >
+                              {/* SKU Column */}
+                              {showSkuColumn && (
+                                <td className="py-2.5">
                                   <input
-                                    type="number"
-                                    value={item.itemDiscount || 0}
-                                    onChange={(e) => handleUpdateItem(item.id, 'itemDiscount', parseFloat(e.target.value) || 0)}
-                                    className="w-10 text-center bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print text-emerald-600 font-semibold"
+                                    type="text"
+                                    value={item.sku || ''}
+                                    onChange={(e) => handleUpdateItem(item.id, 'sku', e.target.value)}
+                                    placeholder="ST-10"
+                                    className="w-full text-[11px] bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
                                   />
-                                  <span className="print-only hidden print:inline text-emerald-600 font-medium">
-                                    {item.itemDiscount || 0}%
-                                  </span>
+                                  <span className="print-only hidden print:inline">{item.sku}</span>
                                 </td>
                               )}
 
-                              {/* Net Amount Total */}
-                              <td className="py-2.5 text-right font-semibold text-slate-900">
-                                {docType === 'credit' ? '-' : ''}
-                                {fmt(calculatedLineTotal)}
+                              {/* Date of Service Column */}
+                              {showServiceDateColumn && (
+                                <td className="py-2.5 text-slate-500">
+                                  <input
+                                    type="text"
+                                    value={item.dateOfService || ''}
+                                    onChange={(e) => handleUpdateItem(item.id, 'dateOfService', e.target.value)}
+                                    placeholder="2026-07-01"
+                                    className="w-full text-[11px] bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
+                                  />
+                                  <span className="print-only hidden print:inline">{item.dateOfService}</span>
+                                </td>
+                              )}
+
+                              {/* Item Description */}
+                              <td className="py-2.5 pr-4">
+                                <input
+                                  type="text"
+                                  value={item.description}
+                                  onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
+                                  className="w-full font-semibold text-slate-800 bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print"
+                                />
+                                <span className="print-only hidden print:inline font-semibold text-slate-850">
+                                  {item.description}
+                                </span>
                               </td>
-                            </>
-                          )}
 
-                          {/* Action Button */}
-                          <td className="py-2.5 text-right no-print">
-                            <button
-                              onClick={() => handleRemoveLineItem(item.id)}
-                              className="text-slate-300 hover:text-rose-600 transition p-1"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              {/* Quantity */}
+                              <td className="py-2.5 text-center">
+                                <input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => handleUpdateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                                  className="w-12 text-center bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print font-medium"
+                                />
+                                <span className="print-only hidden print:inline font-medium">{item.quantity}</span>
+                              </td>
 
-                {/* Inline "Add Item" handle */}
-                <div className="mt-4 no-print flex justify-start">
-                  <button
-                    onClick={handleAddLineItem}
-                    className="px-3 py-1.5 border border-dashed border-slate-300 rounded hover:border-indigo-500 hover:bg-slate-50 transition text-xs font-bold text-slate-600 flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-indigo-500" />
-                    Add Custom Line Item
-                  </button>
-                </div>
-              </div>
+                              {/* Pricing details columns */}
+                              {docType !== 'delivery' && (
+                                <>
+                                  {/* Unit Price Rate */}
+                                  <td className="py-2.5 text-right font-medium text-slate-600">
+                                    <div className="inline-flex items-center justify-end w-full no-print">
+                                      <span className="text-[10px] text-slate-400 mr-0.5">₹</span>
+                                      <input
+                                        type="number"
+                                        value={item.unitPrice}
+                                        onChange={(e) => handleUpdateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                                        className="w-16 text-right bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5"
+                                      />
+                                    </div>
+                                    <span className="print-only hidden print:inline">
+                                      {fmt(item.unitPrice)}
+                                    </span>
+                                  </td>
 
-              {/* DYNAMIC SUMMARY TOTALS & WORKFLOW HIGHLIGHTS */}
-              {docType !== 'delivery' && (
-                <div className="flex justify-end mt-10">
-                  <div className="w-72 space-y-2.5 text-xs text-slate-500">
-                    {/* Raw Subtotal */}
-                    <div className="flex justify-between items-center">
-                      <p>Gross Subtotal</p>
-                      <p className="font-semibold text-slate-800">{fmt(calc.subtotal)}</p>
+                                  {/* Per line item discount column */}
+                                  {discountEnabled && discountType === 'line-item' && (
+                                    <td className="py-2.5 text-center">
+                                      <input
+                                        type="number"
+                                        value={item.itemDiscount || 0}
+                                        onChange={(e) => handleUpdateItem(item.id, 'itemDiscount', parseFloat(e.target.value) || 0)}
+                                        className="w-10 text-center bg-transparent border-0 focus:ring-1 focus:ring-indigo-500 rounded p-0.5 no-print text-emerald-600 font-semibold"
+                                      />
+                                      <span className="print-only hidden print:inline text-emerald-600 font-medium">
+                                        {item.itemDiscount || 0}%
+                                      </span>
+                                    </td>
+                                  )}
+
+                                  {/* Net Amount Total */}
+                                  <td className="py-2.5 text-right font-semibold text-slate-900">
+                                    {docType === 'credit' ? '-' : ''}
+                                    {fmt(calculatedLineTotal)}
+                                  </td>
+                                </>
+                              )}
+
+                              {/* Action Button */}
+                              <td className="py-2.5 text-right no-print">
+                                <button
+                                  onClick={() => handleRemoveLineItem(item.id)}
+                                  className="text-slate-300 hover:text-rose-600 transition p-1"
+                                  title="Delete Item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Inline "Add Item" handle */}
+                    <div className="mt-4 no-print flex justify-start">
+                      <button
+                        onClick={handleAddLineItem}
+                        className="px-3 py-1.5 border border-dashed border-slate-300 rounded hover:border-indigo-500 hover:bg-slate-50 transition text-xs font-bold text-slate-600 flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-indigo-500" />
+                        Add Custom Line Item
+                      </button>
                     </div>
+                  </div>
 
-                    {/* Overall Discount */}
-                    {discountEnabled && (
-                      <div className="flex justify-between items-center text-emerald-600 font-medium">
-                        <p>
-                          Discount{' '}
-                          {discountType === 'total' ? `(${totalDiscountPercent}%)` : '(Line Items Total)'}
-                        </p>
-                        <p>
-                          -{fmt(calc.discountAmount)}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Tax label */}
-                    <div className="flex justify-between items-center">
-                      <p>
-                        {taxLabel} ({taxPercent}%)
-                      </p>
-                      <p className="font-semibold text-slate-800">{fmt(calc.taxAmount)}</p>
-                    </div>
-
-                    {/* Restocking fee deduction for Credit notes */}
-                    {docType === 'credit' && restockingFeePercent > 0 && (
-                      <div className="flex justify-between items-center text-rose-600 font-medium">
-                        <p>Restocking Admin Fee ({restockingFeePercent}%)</p>
-                        <p>+{fmt(calc.restockFeeAmount)}</p>
-                      </div>
-                    )}
-
-                    {/* Grand Total Highlight Box */}
-                    <div
-                      style={{ borderTopColor: brandColor }}
-                      className="flex justify-between items-center text-sm font-bold pt-3 border-t"
-                    >
-                      <span style={{ color: brandColor }}>
-                        {docType === 'credit' ? 'Total Refund Due' : 'Grand Total Due'}
-                      </span>
-                      <span style={{ color: brandColor }} className="text-base font-black">
-                        {fmt(calc.finalTotal)}
-                      </span>
-                    </div>
-
-                    {/* Proforma Advance breakdown block */}
-                    {docType === 'proforma' && (
-                      <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
-                        <div className="flex justify-between text-[11px] font-bold text-slate-800">
-                          <span>{advanceRequirementPercent}% Advance Deposit Due:</span>
-                          <span style={{ color: brandColor }}>{fmt(calc.proformaDepositAmount)}</span>
+                  {/* DYNAMIC SUMMARY TOTALS & WORKFLOW HIGHLIGHTS */}
+                  {docType !== 'delivery' && (
+                    <div className="flex justify-end mt-10 avoid-break">
+                      <div className="w-72 space-y-2.5 text-xs text-slate-500">
+                        {/* Raw Subtotal */}
+                        <div className="flex justify-between items-center">
+                          <p>Gross Subtotal</p>
+                          <p className="font-semibold text-slate-800">{fmt(calc.subtotal)}</p>
                         </div>
-                        <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>Remaining Net Balance:</span>
-                          <span>{fmt(calc.proformaRemainingBalance)}</span>
-                        </div>
-                      </div>
-                    )}
 
-                    {/* Payment Receipt Remaining Balance */}
-                    {docType === 'receipt' && (
-                      <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
-                        <div className="flex justify-between text-[11px] font-bold text-slate-800">
-                          <span>Total Payment Logged:</span>
-                          <span className="text-emerald-600">{fmt(amountReceived)}</span>
+                        {/* Overall Discount */}
+                        {discountEnabled && (
+                          <div className="flex justify-between items-center text-emerald-600 font-medium">
+                            <p>
+                              Discount{' '}
+                              {discountType === 'total' ? `(${totalDiscountPercent}%)` : '(Line Items Total)'}
+                            </p>
+                            <p>
+                              -{fmt(calc.discountAmount)}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Tax label */}
+                        <div className="flex justify-between items-center">
+                          <p>
+                            {taxLabel} ({taxPercent}%)
+                          </p>
+                          <p className="font-semibold text-slate-800">{fmt(calc.taxAmount)}</p>
                         </div>
-                        <div className="flex justify-between text-[11px] font-bold border-t border-slate-200 pt-1.5">
-                          <span>Outstanding Balance Due:</span>
-                          <span className={calc.receiptBalanceDue <= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                            {fmt(Math.max(0, calc.receiptBalanceDue))}
+
+                        {/* Restocking fee deduction for Credit notes */}
+                        {docType === 'credit' && restockingFeePercent > 0 && (
+                          <div className="flex justify-between items-center text-rose-600 font-medium">
+                            <p>Restocking Admin Fee ({restockingFeePercent}%)</p>
+                            <p>+{fmt(calc.restockFeeAmount)}</p>
+                          </div>
+                        )}
+
+                        {/* Grand Total Highlight Box */}
+                        <div
+                          style={{ borderTopColor: brandColor }}
+                          className="flex justify-between items-center text-sm font-bold pt-3 border-t"
+                        >
+                          <span style={{ color: brandColor }}>
+                            {docType === 'credit' ? 'Total Refund Due' : 'Grand Total Due'}
+                          </span>
+                          <span style={{ color: brandColor }} className="text-base font-black">
+                            {fmt(calc.finalTotal)}
                           </span>
                         </div>
+
+                        {/* Proforma Advance breakdown block */}
+                        {docType === 'proforma' && (
+                          <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                            <div className="flex justify-between text-[11px] font-bold text-slate-800">
+                              <span>{advanceRequirementPercent}% Advance Deposit Due:</span>
+                              <span style={{ color: brandColor }}>{fmt(calc.proformaDepositAmount)}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400">
+                              <span>Remaining Net Balance:</span>
+                              <span>{fmt(calc.proformaRemainingBalance)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Payment Receipt Remaining Balance */}
+                        {docType === 'receipt' && (
+                          <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                            <div className="flex justify-between text-[11px] font-bold text-slate-800">
+                              <span>Total Payment Logged:</span>
+                              <span className="text-emerald-600">{fmt(amountReceived)}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px] font-bold border-t border-slate-200 pt-1.5">
+                              <span>Outstanding Balance Due:</span>
+                              <span className={calc.receiptBalanceDue <= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                                {fmt(Math.max(0, calc.receiptBalanceDue))}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Delivery custom box metrics details block */}
-              {docType === 'delivery' && showBoxMetrics && (
-                <div className="mt-8 border-t border-slate-100 pt-6">
-                  <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded border border-slate-200 text-xs">
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Gross Weight</p>
-                      <p className="font-semibold text-slate-800 mt-1">{cargoWeight}</p>
                     </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Carton Dimensions</p>
-                      <p className="font-semibold text-slate-800 mt-1">{cargoDimensions}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Package Count</p>
-                      <p className="font-semibold text-slate-800 mt-1">{cargoBoxes} Boxes</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {/* Estimate valid terms */}
-              {docType === 'estimate' && preSaleTerms && (
-                <div className="mt-8 p-3 bg-blue-50/50 border border-blue-100 rounded text-[11px] text-blue-800 italic">
-                  <span className="font-bold uppercase tracking-wide not-italic block mb-0.5 text-[9px] text-blue-500">
-                    Pre-sale Proposal Agreement Note
-                  </span>
-                  {preSaleTerms}
-                </div>
-              )}
+                  {/* Delivery custom box metrics details block */}
+                  {docType === 'delivery' && showBoxMetrics && (
+                    <div className="mt-8 border-t border-slate-100 pt-6">
+                      <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded border border-slate-200 text-xs">
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Gross Weight</p>
+                          <p className="font-semibold text-slate-800 mt-1">{cargoWeight}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Carton Dimensions</p>
+                          <p className="font-semibold text-slate-800 mt-1">{cargoDimensions}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">Package Count</p>
+                          <p className="font-semibold text-slate-800 mt-1">{cargoBoxes} Boxes</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-              {/* Credit reason box */}
-              {docType === 'credit' && reasonForCredit && (
-                <div className="mt-8 p-3 bg-rose-50/50 border border-rose-100 rounded text-[11px] text-rose-800">
-                  <span className="font-bold uppercase tracking-wide block mb-0.5 text-[9px] text-rose-500">
-                    Reason for Credit Adjustment
-                  </span>
-                  {reasonForCredit}
-                </div>
+                  {/* Estimate valid terms */}
+                  {docType === 'estimate' && preSaleTerms && (
+                    <div className="mt-8 p-3 bg-blue-50/50 border border-blue-100 rounded text-[11px] text-blue-800 italic">
+                      <span className="font-bold uppercase tracking-wide not-italic block mb-0.5 text-[9px] text-blue-500">
+                        Pre-sale Proposal Agreement Note
+                      </span>
+                      {preSaleTerms}
+                    </div>
+                  )}
+
+                  {/* Credit reason box */}
+                  {docType === 'credit' && reasonForCredit && (
+                    <div className="mt-8 p-3 bg-rose-50/50 border border-rose-100 rounded text-[11px] text-rose-800">
+                      <span className="font-bold uppercase tracking-wide block mb-0.5 text-[9px] text-rose-500">
+                        Reason for Credit Adjustment
+                      </span>
+                      {reasonForCredit}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* LOWER PAYMENT INSTRUCTIONS & COMPLIANCE BLOCK */}
-            <div className="mt-14 border-t border-slate-100 pt-6">
+            <div className="mt-14 border-t border-slate-100 pt-6 avoid-break">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-[11px] leading-relaxed">
                 {/* Dynamic How to Pay banking details */}
                 <div>
